@@ -6,7 +6,7 @@
   "entry": "plugin.js",
   "description": "Liga BBVA MX en vivo: partidos de hoy con streams directos por equipo local",
   "author": "TP31",
-  "homepage": "https://github.com/TrashPirate31/TPSports31",
+  "homepage": "https://github.com/TrashPirate31/LMX31",
   "hosts": [
     "webws.365scores.com",
     "raw.githubusercontent.com",

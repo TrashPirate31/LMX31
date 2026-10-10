@@ -1,20 +1,25 @@
 {
-  "id": "streamed-sports31",
-  "name": "StreamedSports31",
-  "version": "10.1.0",
-  "apiVersion": 6,
+  "id": "liga-mx-31",
+  "name": "Liga MX 31",
+  "version": "1.0.0",
+  "apiVersion": 3,
   "entry": "plugin.js",
-  "description": "Deportes en vivo: DaddyLive + streamed.pk con browser oculto",
+  "description": "Liga BBVA MX en vivo: partidos de hoy con streams directos por equipo local",
   "author": "TP31",
   "homepage": "https://github.com/TrashPirate31/TPSports31",
   "hosts": [
-    "daddylive.mov",
-    "streamed.pk"
+    "webws.365scores.com",
+    "raw.githubusercontent.com",
+    "planettvweb.com",
+    "23.237.104.106",
+    "187.245.231.226",
+    "168.228.44.241",
+    "estrellatv-oando.amagi.tv",
+    "angelexspectrus.neospaxy.top",
+    "45.5.118.152"
   ],
   "capabilities": ["search", "resolve", "channels"],
-  "browser": true,
-  "streamHosts": "any",
   "liveStreamHosts": "any",
-  "color": "#1A6B3C",
+  "color": "#0A3B72",
   "icon": "icon.png"
 }

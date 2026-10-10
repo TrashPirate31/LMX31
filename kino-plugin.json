@@ -1,7 +1,7 @@
 {
   "id": "liga-mx-31",
   "name": "Liga MX 31",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "apiVersion": 3,
   "entry": "plugin.js",
   "description": "Liga BBVA MX en vivo: partidos de hoy con streams directos por equipo local",

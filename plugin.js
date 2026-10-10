@@ -1,5 +1,5 @@
 /// <reference path="./sdk/kino.d.ts" />
-// LigaMX31 v1.3.0
+// LigaMX31 v1.4.0
 // Schedule: webws.365scores.com (Liga MX, competition 141)
 // Streams: canales.m3u del repo (m3u8 directos, sin browser)
 // Mapeo: canal por equipo local según derechos Apertura 2026
@@ -8,7 +8,7 @@ const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31
 const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/LMX31/refs/heads/main/canales.m3u";
 const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
-const M3U_KEY = "ligamx-canales-v103";
+const M3U_KEY = "ligamx-canales-v104";
 const M3U_TTL = 2 * 60 * 60 * 1000; // 2 horas
 
 // ── Mapeo equipo local → canales en orden de prioridad ──────────────────────
@@ -216,10 +216,14 @@ export async function liveChannels({ categoryId, cursor }) {
     if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
     if (!isToday(g.startTime)) continue;
 
-    var statusNum = g.statusGroup; // 1=upcoming, 2=live, 3=finished
-    if (categoryId === "en-vivo"  && statusNum !== 2) continue;
-    if (categoryId === "proximos" && statusNum !== 1) continue;
-    if (statusNum === 3) continue;
+    var statusNum = g.statusGroup; // 3 = finalizado
+    if (statusNum === 3) continue; // Descartar únicamente los finalizados
+
+    var isLive = (statusNum === 2);
+    var isUpcoming = !isLive; // Todo lo que no esté en vivo hoy se cataloga como próximo
+
+    if (categoryId === "en-vivo" && !isLive) continue;
+    if (categoryId === "proximos" && !isUpcoming) continue;
 
     var matchTitle = home + " vs " + away;
     var baseId = "lmx-" + slugify(home + "-" + away + "-" + (g.id || i));
@@ -227,7 +231,7 @@ export async function liveChannels({ categoryId, cursor }) {
     var timeStr = toMXTime(g.startTime);
 
     var scoreBadge = "";
-    if (statusNum === 2 && g.homeCompetitor && g.awayCompetitor) {
+    if (isLive && g.homeCompetitor && g.awayCompetitor) {
       var hs = g.homeCompetitor.score;
       var as2 = g.awayCompetitor.score;
       if (hs !== undefined && as2 !== undefined) {
@@ -246,7 +250,7 @@ export async function liveChannels({ categoryId, cursor }) {
       if (seenIds.has(id)) continue;
       seenIds.add(id);
 
-      var prefix = statusNum === 2 ? "🔴 " : "⏳ ";
+      var prefix = isLive ? "🔴 " : "⏳ ";
       var title = prefix + matchTitle + " · " + chName;
 
       var badges = [];
@@ -320,7 +324,8 @@ export async function search(query) {
       if (seenIds.has(id)) continue;
       seenIds.add(id);
 
-      var prefix = g.statusGroup === 2 ? "🔴 " : "⏳ ";
+      var isLive = (g.statusGroup === 2);
+      var prefix = isLive ? "🔴 " : "⏳ ";
       items.push({
         id: id,
         title: prefix + title + " · " + chName,
@@ -358,5 +363,5 @@ export async function resolve(ref) {
     url: url,
     mime: "application/vnd.apple.mpegurl",
   };
-}
-  
+        }
+      

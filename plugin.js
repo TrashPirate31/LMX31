@@ -1,5 +1,5 @@
 /// <reference path="./sdk/kino.d.ts" />
-// LigaMX31 v1.1.1
+// LigaMX31 v1.2.0
 // Schedule: webws.365scores.com (Liga MX, competition 141)
 // Streams: canales.m3u del repo (m3u8 directos, sin browser)
 // Mapeo: canal por equipo local según derechos Apertura 2026
@@ -8,11 +8,10 @@ const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31
 const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/LMX31/refs/heads/main/canales.m3u";
 const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
-const M3U_KEY = "ligamx-canales-v101";
+const M3U_KEY = "ligamx-canales-v102";
 const M3U_TTL = 2 * 60 * 60 * 1000; // 2 horas
 
 // ── Mapeo equipo local → canales en orden de prioridad ──────────────────────
-// Nombres exactos según tvg-name del M3U
 var TEAM_CHANNELS = {
   "atlante":           ["Azteca 7", "TUDN USA", "Univision TDN"],
   "fc juarez":         ["Azteca 7", "Estrella TV"],
@@ -27,6 +26,7 @@ var TEAM_CHANNELS = {
   "atlas":             ["TUDN", "TUDN USA", "Univision TDN"],
   "atletico san luis": ["Telemundo"],
   "atletico de san luis": ["Telemundo"],
+  "san luis":          ["Telemundo"],
   "cruz azul":         ["TUDN", "TUDN USA", "Univision TDN"],
   "guadalajara":       ["Telemundo"],
   "chivas":            ["Telemundo"],
@@ -34,6 +34,7 @@ var TEAM_CHANNELS = {
   "leon":              ["TUDN USA", "Univision TDN"],
   "monterrey":         ["TUDN", "TUDN USA", "Univision TDN"],
   "cf monterrey":      ["TUDN", "TUDN USA", "Univision TDN"],
+  "rayados":           ["TUDN", "TUDN USA", "Univision TDN"],
   "pachuca":           ["TUDN USA", "Univision TDN"],
   "queretaro":         ["TUDN USA", "Univision TDN"],
   "santos laguna":     ["TUDN", "TUDN USA", "Univision TDN"],
@@ -42,15 +43,26 @@ var TEAM_CHANNELS = {
   "xolos":             ["TUDN USA", "Univision TDN"],
   "pumas":             ["TUDN", "TUDN USA", "Univision TDN"],
   "pumas unam":        ["TUDN", "TUDN USA", "Univision TDN"],
+  "mazatlan":          ["Azteca 7", "TUDN USA"],
+  "mazatlan fc":       ["Azteca 7", "TUDN USA"]
 };
 
-// MODIFICACIÓN: Si no está en el mapeo de Liga MX, retorna null para descartarlo
+var DEFAULT_CHANNELS = ["TUDN USA", "Univision TDN", "Azteca 7"];
+
 function getChannelsForTeam(teamName) {
-  if (!teamName) return null;
+  if (!teamName) return DEFAULT_CHANNELS;
   var key = teamName.toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9 ]/g, "").trim();
-  return TEAM_CHANNELS[key] || null;
+  return TEAM_CHANNELS[key] || DEFAULT_CHANNELS;
+}
+
+function isLigaMXTeam(teamName) {
+  if (!teamName) return false;
+  var key = teamName.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, "").trim();
+  return !!TEAM_CHANNELS[key];
 }
 
 // ── Utilidades ───────────────────────────────────────────────────────────────
@@ -73,6 +85,17 @@ function toMXTime(timestamp) {
   var ampm = h >= 12 ? "pm" : "am";
   h = h % 12 || 12;
   return h + ":" + (m < 10 ? "0" : "") + m + " " + ampm + " MX";
+}
+
+// Validar estrictamente si el partido corresponde al día de hoy (Hora México UTC-6)
+function isToday(timestamp) {
+  if (!timestamp) return false;
+  var ms = timestamp > 9999999999 ? timestamp : timestamp * 1000;
+  var gameDate = new Date(ms - 6 * 60 * 60 * 1000);
+  var now = new Date(Date.now() - 6 * 60 * 60 * 1000);
+  return gameDate.getUTCFullYear() === now.getUTCFullYear() &&
+         gameDate.getUTCMonth() === now.getUTCMonth() &&
+         gameDate.getUTCDate() === now.getUTCDate();
 }
 
 // ── Parsear M3U ───────────────────────────────────────────────────────────────
@@ -153,15 +176,6 @@ async function fetchMatches() {
   return data.games || [];
 }
 
-// ── Normalizar nombre de equipo ───────────────────────────────────────────────
-
-function normTeam(name) {
-  return String(name || "")
-    .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9 ]/g, "").trim();
-}
-
 // ── liveCategories ────────────────────────────────────────────────────────────
 
 export async function liveCategories() {
@@ -186,30 +200,29 @@ export async function liveChannels({ categoryId, cursor }) {
   for (var i = 0; i < games.length; i++) {
     var g = games[i];
 
-    // Filtrar por categoría de estado
+    var home = g.homeCompetitor && g.homeCompetitor.name;
+    var away = g.awayCompetitor && g.awayCompetitor.name;
+    if (!home || !away) continue;
+
+    // FILTRO ESTRICTO: Al menos uno de los dos equipos debe pertenecer a la Liga MX
+    if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
+
+    // FILTRO DE FECHA: El partido debe ser estrictamente HOY
+    if (!isToday(g.startTime)) continue;
+
     var statusNum = g.statusGroup; // 1=upcoming, 2=live, 3=finished
     if (categoryId === "en-vivo"  && statusNum !== 2) continue;
     if (categoryId === "proximos" && statusNum !== 1) continue;
     if (statusNum === 3) continue; // nunca mostrar terminados
 
-    var home = g.homeCompetitor && g.homeCompetitor.name;
-    var away = g.awayCompetitor && g.awayCompetitor.name;
-    if (!home || !away) continue;
-
-    // FILTRO ESTRICTO: Validar que el equipo local sea de la Liga MX
-    var channels = getChannelsForTeam(home);
-    if (!channels) continue; // Si no está en el diccionario de Liga MX, se descarta
-
     var matchTitle = home + " vs " + away;
     var baseId = "lmx-" + slugify(home + "-" + away + "-" + (g.id || i));
 
-    // Hora MX
     var timeStr = "";
     if (g.startTime) {
       timeStr = toMXTime(g.startTime);
     }
 
-    // Score badge para partidos en vivo
     var scoreBadge = "";
     if (statusNum === 2 && g.homeCompetitor && g.awayCompetitor) {
       var hs = g.homeCompetitor.score;
@@ -219,10 +232,12 @@ export async function liveChannels({ categoryId, cursor }) {
       }
     }
 
+    var channels = getChannelsForTeam(home);
+
     for (var j = 0; j < channels.length; j++) {
       var chName = channels[j];
       var chUrl = index.get(chName);
-      if (!chUrl) continue; // no tenemos ese canal
+      if (!chUrl) continue;
 
       var id = baseId + "-" + slugify(chName);
       if (seenIds.has(id)) continue;
@@ -279,19 +294,19 @@ export async function search(query) {
 
   for (var i = 0; i < games.length; i++) {
     var g = games[i];
-    if (g.statusGroup === 3) continue;
     var home = g.homeCompetitor && g.homeCompetitor.name;
     var away = g.awayCompetitor && g.awayCompetitor.name;
     if (!home || !away) continue;
 
-    // FILTRO ESTRICTO: Solo equipos de Liga MX
-    var channels = getChannelsForTeam(home);
-    if (!channels) continue;
+    if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
+    if (!isToday(g.startTime)) continue;
+    if (g.statusGroup === 3) continue;
 
     var title = home + " vs " + away;
     var normTitle = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (normTitle.indexOf(q) < 0) continue;
 
+    var channels = getChannelsForTeam(home);
     var baseId = "lmx-" + slugify(home + "-" + away + "-" + (g.id || i));
 
     for (var j = 0; j < channels.length; j++) {
@@ -340,5 +355,5 @@ export async function resolve(ref) {
     url: url,
     mime: "application/vnd.apple.mpegurl",
   };
-    }
-  
+      }
+                                                           

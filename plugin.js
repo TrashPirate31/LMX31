@@ -1,128 +1,178 @@
 /// <reference path="./sdk/kino.d.ts" />
-// StreamedSports31 v10.1.0
-// Fuentes: DaddyLive + streamed.pk
-// Streams: kino.browser.capture, prueba cada link uno por uno, timeout máximo en el último
+// LigaMX31 v1.0.0
+// Schedule: webws.365scores.com (Liga MX, competition 141)
+// Streams: canales.m3u del repo (m3u8 directos, sin browser)
+// Mapeo: canal por equipo local según derechos Apertura 2026
 
-const API    = "https://daddylive.mov/api";
-const STREAMED = "https://streamed.pk/api";
-const UA     = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
-const MAX_MS = 25000; // timeout máximo permitido por Kino
-const MID_MS = 15000; // timeout para links intermedios
+const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31&sports=1&competitions=141";
+const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/TPSports31/refs/heads/main/canales.m3u";
+const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
-// ── Utilidades ────────────────────────────────────────────────────────────────
+const M3U_KEY = "ligamx-canales-v100";
+const M3U_TTL = 2 * 60 * 60 * 1000; // 2 horas
+
+// ── Mapeo equipo local → canales en orden de prioridad ──────────────────────
+// Nombres exactos según tvg-name del M3U
+var TEAM_CHANNELS = {
+  "atlante":           ["Azteca 7", "TUDN USA", "Univision TDN"],
+  "fc juarez":         ["Azteca 7", "Estrella TV"],
+  "juarez":            ["Azteca 7", "Estrella TV"],
+  "necaxa":            ["Azteca 7", "TUDN USA", "Univision TDN"],
+  "puebla":            ["Azteca 7", "TUDN USA", "Univision TDN"],
+  "tigres":            ["Azteca 7", "Estrella TV"],
+  "tigres uanl":       ["Azteca 7", "Estrella TV"],
+  "toluca":            ["Azteca 7", "TUDN", "TUDN USA", "Univision TDN"],
+  "america":           ["TUDN", "TUDN USA", "Univision TDN"],
+  "club america":      ["TUDN", "TUDN USA", "Univision TDN"],
+  "atlas":             ["TUDN", "TUDN USA", "Univision TDN"],
+  "atletico san luis": ["Telemundo"],
+  "atletico de san luis": ["Telemundo"],
+  "cruz azul":         ["TUDN", "TUDN USA", "Univision TDN"],
+  "guadalajara":       ["Telemundo"],
+  "chivas":            ["Telemundo"],
+  "deportivo guadalajara": ["Telemundo"],
+  "leon":              ["TUDN USA", "Univision TDN"],
+  "monterrey":         ["TUDN", "TUDN USA", "Univision TDN"],
+  "cf monterrey":      ["TUDN", "TUDN USA", "Univision TDN"],
+  "pachuca":           ["TUDN USA", "Univision TDN"],
+  "queretaro":         ["TUDN USA", "Univision TDN"],
+  "santos laguna":     ["TUDN", "TUDN USA", "Univision TDN"],
+  "santos":            ["TUDN", "TUDN USA", "Univision TDN"],
+  "tijuana":           ["TUDN USA", "Univision TDN"],
+  "xolos":             ["TUDN USA", "Univision TDN"],
+  "pumas":             ["TUDN", "TUDN USA", "Univision TDN"],
+  "pumas unam":        ["TUDN", "TUDN USA", "Univision TDN"],
+};
+
+// Fallback si no está en el mapeo
+var DEFAULT_CHANNELS = ["TUDN USA", "Univision TDN", "TUDN"];
+
+function getChannelsForTeam(teamName) {
+  if (!teamName) return DEFAULT_CHANNELS;
+  var key = teamName.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, "").trim();
+  return TEAM_CHANNELS[key] || DEFAULT_CHANNELS;
+}
+
+// ── Utilidades ───────────────────────────────────────────────────────────────
 
 function slugify(s) {
   return String(s || "")
     .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9._~-]/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 100) || "item";
 }
 
-function safeId(raw) {
-  var s = "dl-" + slugify(String(raw || "")).slice(0, 80);
-  return s.replace(/[^A-Za-z0-9._~-]/g, "-").slice(0, 128);
+function toMXTime(timestamp) {
+  var ms = timestamp > 9999999999 ? timestamp : timestamp * 1000;
+  var d = new Date(ms - 6 * 60 * 60 * 1000); // UTC-6 México Central
+  var h = d.getUTCHours();
+  var m = d.getUTCMinutes();
+  var ampm = h >= 12 ? "pm" : "am";
+  h = h % 12 || 12;
+  return h + ":" + (m < 10 ? "0" : "") + m + " " + ampm + " MX";
 }
 
-// ── Fetch helper ──────────────────────────────────────────────────────────────
+// ── Parsear M3U ───────────────────────────────────────────────────────────────
 
-async function apiGet(path) {
-  await null;
-  var r;
-  try {
-    r = await kino.fetch(API + path, {
-      headers: { "User-Agent": UA, "Accept": "application/json" }
-    });
-  } catch (e) {
-    throw kino.error("unavailable", "Sin conexión con DaddyLive");
-  }
-  if (r.status === 429) throw kino.error("rate_limited");
-  if (!r.ok) throw kino.error("unavailable", "DaddyLive respondió " + r.status);
-  return r.json();
-}
-
-// ── Traducción de categorías ──────────────────────────────────────────────────
-
-var CAT_ES = {
-  "Football":          "⚽ Fútbol",
-  "Basketball":        "🏀 Baloncesto",
-  "Hockey":            "🏒 Hockey",
-  "Boxing":            "🥊 Boxeo",
-  "MMA / UFC":         "🥋 MMA / UFC",
-  "Baseball":          "⚾ Béisbol",
-  "American Football": "🏈 Fútbol Americano",
-  "Racing":            "🏎 Automovilismo",
-  "Tennis":            "🎾 Tenis",
-  "Cricket":           "🏏 Cricket",
-  "Rugby":             "🏉 Rugby",
-  "Golf":              "⛳ Golf",
-  "Darts":             "🎯 Dardos",
-  "Snooker":           "🎱 Snooker",
-};
-
-function catTitle(cat) {
-  return CAT_ES[cat] || ("🏟 " + cat);
-}
-
-// ── streamed.pk ───────────────────────────────────────────────────────────────
-
-async function fetchStreamedLive() {
-  await null;
-  var r;
-  try {
-    r = await kino.fetch(STREAMED + "/matches/live", {
-      headers: { "User-Agent": UA, "Accept": "application/json" }
-    });
-  } catch (e) { return []; }
-  if (!r.ok) return [];
-  var matches = r.json();
-  if (!Array.isArray(matches)) return [];
+function parseM3U(text) {
+  var lines = String(text || "").split("\n");
   var out = [];
-  for (var i = 0; i < matches.length; i++) {
-    var m = matches[i];
-    if (!m.id || !m.sources || !m.sources.length) continue;
-    var home = m.teams && m.teams.home && m.teams.home.name;
-    var away = m.teams && m.teams.away && m.teams.away.name;
-    var title = (home && away) ? (home + " vs " + away) : (m.title || "Partido");
-    var urls = m.sources.map(function(s) {
-      return "https://embedme.top/embed/" + s.source + "/" + s.id + "/1";
-    });
-    if (!urls.length) continue;
-    var badge = m.teams && m.teams.home && m.teams.home.badge;
-    out.push({
-      id: "sk-" + slugify(String(m.id)).slice(0, 80),
-      title: title,
-      embedUrls: urls,
-      sport: m.category || "",
-      poster: badge ? ("https://streamed.pk/api/images/badge/" + badge + ".webp") : undefined,
-    });
+  var meta = null;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (line.indexOf("#EXTINF:") === 0) {
+      var nameM = line.match(/tvg-name="([^"]+)"/);
+      var comma = line.lastIndexOf(",");
+      meta = { name: (nameM && nameM[1]) || (comma >= 0 ? line.slice(comma + 1).trim() : "") };
+    } else if (line.indexOf("http") === 0 && meta) {
+      if (meta.name) out.push({ name: meta.name, url: line });
+      meta = null;
+    } else if (line.indexOf("#") !== 0) {
+      meta = null;
+    }
   }
   return out;
+}
+
+// ── Índice de canales ─────────────────────────────────────────────────────────
+
+var _index = null;
+
+async function getIndex() {
+  await null;
+  if (_index) return _index;
+
+  var cached = kino.storage.get(M3U_KEY);
+  if (cached) {
+    try { _index = new Map(JSON.parse(cached)); return _index; } catch (e) { /* re-fetch */ }
+  }
+
+  var text = "";
+  try {
+    var r = await kino.fetch(MY_M3U, { headers: { "User-Agent": UA } });
+    if (r.ok) text = r.text();
+  } catch (e) { /* seguir con índice vacío */ }
+
+  var channels = parseM3U(text);
+  _index = new Map();
+  for (var i = 0; i < channels.length; i++) {
+    _index.set(channels[i].name, channels[i].url);
+  }
+  kino.log("Canales cargados:", _index.size);
+
+  try {
+    var ser = JSON.stringify([..._index]);
+    if (ser.length < 250000) kino.storage.set(M3U_KEY, ser, { ttlMs: M3U_TTL });
+  } catch (e) { /* ignorar */ }
+
+  return _index;
+}
+
+// ── Fetch del schedule de Liga MX ─────────────────────────────────────────────
+
+async function fetchMatches() {
+  await null;
+  var r;
+  try {
+    r = await kino.fetch(SCORES_API, {
+      headers: {
+        "User-Agent": UA,
+        "Accept": "application/json",
+        "Origin": "https://www.365scores.com",
+        "Referer": "https://www.365scores.com/",
+      }
+    });
+  } catch (e) {
+    throw kino.error("unavailable", "Sin conexión con 365scores");
+  }
+  if (!r.ok) throw kino.error("unavailable", "365scores respondió " + r.status);
+  var data = r.json();
+  return data.games || [];
+}
+
+// ── Normalizar nombre de equipo ───────────────────────────────────────────────
+
+function normTeam(name) {
+  return String(name || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, "").trim();
 }
 
 // ── liveCategories ────────────────────────────────────────────────────────────
 
 export async function liveCategories() {
   await null;
-  var data;
-  try {
-    data = await apiGet("/events");
-  } catch (e) {
-    return [{ id: "all", title: "🔴 En Vivo" }];
-  }
-  var cats = new Map();
-  cats.set("all", { id: "all", title: "🔴 Todos en Vivo" });
-  cats.set("streamed", { id: "streamed", title: "🔴 streamed.pk" });
-  var categories = data.categories || {};
-  for (var cat in categories) {
-    if (!Object.prototype.hasOwnProperty.call(categories, cat)) continue;
-    var id = slugify(cat);
-    if (!cats.has(id)) {
-      cats.set(id, { id: id, title: catTitle(cat) });
-    }
-  }
-  return Array.from(cats.values()).slice(0, 200);
+  return [
+    { id: "en-vivo",  title: "🔴 En Vivo" },
+    { id: "proximos", title: "⏳ Próximos" },
+    { id: "todos",    title: "📅 Todos Hoy" },
+  ];
 }
 
 // ── liveChannels ──────────────────────────────────────────────────────────────
@@ -130,96 +180,87 @@ export async function liveCategories() {
 export async function liveChannels({ categoryId, cursor }) {
   await null;
 
-  // ── streamed.pk ──
-  if (categoryId === "streamed") {
-    var skList;
-    try { skList = await fetchStreamedLive(); } catch (e) { skList = []; }
-    if (!skList.length) {
-      return { items: [{ id: "sin-sk", title: "No hay partidos en vivo en streamed.pk", categoryId: "streamed", ref: "live|x|sin-stream|" }] };
-    }
-    var skItems = [];
-    var skSeen = new Set();
-    for (var si = 0; si < skList.length; si++) {
-      var sev = skList[si];
-      if (skSeen.has(sev.id)) continue;
-      skSeen.add(sev.id);
-      var sref = "live|" + sev.id + "|multi|" + encodeURIComponent(sev.embedUrls.join("^^"));
-      if (sref.length > 4000) sref = "live|" + sev.id + "|single|" + encodeURIComponent(sev.embedUrls[0]);
-      skItems.push({ id: sev.id, title: "🔴 " + sev.title, categoryId: "streamed", ref: sref, poster: sev.poster, badges: [sev.sport].filter(Boolean).map(function(b){ return String(b).slice(0,25); }) });
-    }
-    return { items: skItems };
-  }
-
-  var data;
-  try {
-    data = await apiGet("/events");
-  } catch (e) {
-    return {
-      items: [{
-        id: "error-dl",
-        title: "No se pudo conectar con DaddyLive",
-        categoryId: categoryId,
-        ref: "live|x|sin-stream|",
-      }]
-    };
-  }
-
-  var categories = data.categories || {};
-  var allEvents = [];
-
-  for (var cat in categories) {
-    if (!Object.prototype.hasOwnProperty.call(categories, cat)) continue;
-    var catId = slugify(cat);
-    if (categoryId !== "all" && catId !== categoryId) continue;
-    var events = categories[cat];
-    if (!Array.isArray(events)) continue;
-    for (var i = 0; i < events.length; i++) {
-      allEvents.push({ ev: events[i], cat: cat });
-    }
-  }
-
-  if (!allEvents.length) {
-    return {
-      items: [{
-        id: "sin-eventos-" + slugify(categoryId),
-        title: "No hay eventos en vivo en este momento",
-        categoryId: categoryId,
-        ref: "live|x|sin-stream|",
-      }]
-    };
-  }
+  var [index, games] = await Promise.all([getIndex(), fetchMatches()]);
 
   var items = [];
   var seenIds = new Set();
 
-  for (var k = 0; k < allEvents.length; k++) {
-    var entry = allEvents[k];
-    var ev = entry.ev;
-    if (!ev.event || !ev.channels || !ev.channels.length) continue;
+  for (var i = 0; i < games.length; i++) {
+    var g = games[i];
 
-    var id = safeId(ev.event + "-" + (ev.time || "").replace(/[^0-9]/g, ""));
-    if (seenIds.has(id)) continue;
-    seenIds.add(id);
+    // Filtrar por categoría
+    var statusNum = g.statusGroup; // 1=upcoming, 2=live, 3=finished
+    if (categoryId === "en-vivo"  && statusNum !== 2) continue;
+    if (categoryId === "proximos" && statusNum !== 1) continue;
+    if (statusNum === 3) continue; // nunca mostrar terminados
 
-    var urls = ev.channels.map(function(c) { return c.url; }).filter(Boolean);
-    if (!urls.length) continue;
+    var home = g.homeCompetitor && g.homeCompetitor.name;
+    var away = g.awayCompetitor && g.awayCompetitor.name;
+    if (!home || !away) continue;
 
-    var refData = urls.join("^^");
-    var ref = "live|" + id + "|multi|" + encodeURIComponent(refData);
-    if (ref.length > 4000) {
-      ref = "live|" + id + "|single|" + encodeURIComponent(urls[0]);
+    var matchTitle = home + " vs " + away;
+    var baseId = "lmx-" + slugify(home + "-" + away + "-" + (g.id || i));
+
+    // Hora MX
+    var timeStr = "";
+    if (g.startTime) {
+      timeStr = toMXTime(g.startTime);
     }
 
-    items.push({
-      id: id,
-      title: "🔴 " + String(ev.event).slice(0, 180),
-      categoryId: categoryId,
-      ref: ref,
-      badges: [
-        ev.time ? String(ev.time).slice(0, 25) : "En vivo",
-        entry.cat ? String(entry.cat).slice(0, 25) : "",
-      ].filter(Boolean),
-    });
+    // Score badge para partidos en vivo
+    var scoreBadge = "";
+    if (statusNum === 2 && g.homeCompetitor && g.awayCompetitor) {
+      var hs = g.homeCompetitor.score;
+      var as2 = g.awayCompetitor.score;
+      if (hs !== undefined && as2 !== undefined) {
+        scoreBadge = hs + " - " + as2;
+      }
+    }
+
+    // Canales ordenados por prioridad para el equipo local
+    var channels = getChannelsForTeam(home);
+
+    for (var j = 0; j < channels.length; j++) {
+      var chName = channels[j];
+      var chUrl = index.get(chName);
+      if (!chUrl) continue; // no tenemos ese canal
+
+      var id = baseId + "-" + slugify(chName);
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+
+      var prefix = statusNum === 2 ? "🔴 " : "⏳ ";
+      var title = prefix + matchTitle + " · " + chName;
+
+      var badges = [];
+      if (scoreBadge) badges.push(scoreBadge);
+      else if (timeStr) badges.push(timeStr);
+      if (g.competition && g.competition.name) badges.push(g.competition.name.slice(0, 20));
+
+      items.push({
+        id: id,
+        title: title.slice(0, 200),
+        categoryId: categoryId,
+        ref: "live|" + id + "|" + encodeURIComponent(chUrl),
+        badges: badges,
+      });
+    }
+  }
+
+  if (!items.length) {
+    var msg = categoryId === "en-vivo"
+      ? "No hay partidos de Liga MX en vivo ahora"
+      : categoryId === "proximos"
+      ? "No hay próximos partidos programados hoy"
+      : "No hay partidos de Liga MX hoy";
+    return {
+      items: [{
+        id: "sin-partidos-" + categoryId,
+        title: msg,
+        categoryId: categoryId,
+        ref: "live|vacio|sin-stream",
+      }]
+    };
   }
 
   return { items: items };
@@ -229,45 +270,43 @@ export async function liveChannels({ categoryId, cursor }) {
 
 export async function search(query) {
   await null;
-  var q = String((query && query.q) || "").trim().toLowerCase();
+  var q = String((query && query.q) || "").trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (!q) return [];
 
-  var data;
-  try {
-    data = await apiGet("/events");
-  } catch (e) {
-    return [];
-  }
-
-  var categories = data.categories || {};
+  var [index, games] = await Promise.all([getIndex(), fetchMatches()]);
   var items = [];
   var seenIds = new Set();
 
-  for (var cat in categories) {
-    if (!Object.prototype.hasOwnProperty.call(categories, cat)) continue;
-    var events = categories[cat];
-    if (!Array.isArray(events)) continue;
-    for (var i = 0; i < events.length; i++) {
-      var ev = events[i];
-      if (!ev.event) continue;
-      if (ev.event.toLowerCase().indexOf(q) < 0 && cat.toLowerCase().indexOf(q) < 0) continue;
-      if (!ev.channels || !ev.channels.length) continue;
+  for (var i = 0; i < games.length; i++) {
+    var g = games[i];
+    if (g.statusGroup === 3) continue;
+    var home = g.homeCompetitor && g.homeCompetitor.name;
+    var away = g.awayCompetitor && g.awayCompetitor.name;
+    if (!home || !away) continue;
 
-      var id = safeId(ev.event + "-" + (ev.time || "").replace(/[^0-9]/g, ""));
+    var title = home + " vs " + away;
+    var normTitle = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (normTitle.indexOf(q) < 0) continue;
+
+    var channels = getChannelsForTeam(home);
+    var baseId = "lmx-" + slugify(home + "-" + away + "-" + (g.id || i));
+
+    for (var j = 0; j < channels.length; j++) {
+      var chName = channels[j];
+      var chUrl = index.get(chName);
+      if (!chUrl) continue;
+      var id = baseId + "-" + slugify(chName);
       if (seenIds.has(id)) continue;
       seenIds.add(id);
 
-      var urls = ev.channels.map(function(c) { return c.url; }).filter(Boolean);
-      var refData = urls.join("^^");
-      var ref = "live|" + id + "|multi|" + encodeURIComponent(refData);
-      if (ref.length > 4000) ref = "live|" + id + "|single|" + encodeURIComponent(urls[0]);
-
+      var prefix = g.statusGroup === 2 ? "🔴 " : "⏳ ";
       items.push({
         id: id,
-        title: "🔴 " + String(ev.event).slice(0, 180),
+        title: prefix + title + " · " + chName,
         kind: "live",
-        ref: ref,
-        badges: [ev.time || "En vivo", cat].filter(Boolean).map(function(b) { return String(b).slice(0, 25); }),
+        ref: "live|" + id + "|" + encodeURIComponent(chUrl),
+        badges: ["Liga MX"],
       });
     }
   }
@@ -275,109 +314,29 @@ export async function search(query) {
   return items.slice(0, 50);
 }
 
-// ── resolve: prueba cada link uno por uno, timeout máximo en el último ────────
+// ── resolve ───────────────────────────────────────────────────────────────────
 
 export async function resolve(ref) {
   await null;
-
   var parts = String(ref).split("|");
-  if (parts.length < 4 || parts[0] !== "live") {
+  if (parts.length < 3 || parts[0] !== "live") {
     throw kino.error("not_found", "ref desconocida");
   }
 
-  var type  = parts[2];
-  var value = parts.slice(3).join("|");
+  var type = parts[2];
 
-  if (type === "sin-stream") {
-    throw kino.error("unavailable", "Este evento no tiene stream disponible");
+  if (type === "vacio" || type === "sin-stream") {
+    throw kino.error("unavailable", "No hay stream disponible");
   }
 
-  var embedUrls = [];
-  if (type === "multi") {
-    embedUrls = decodeURIComponent(value).split("^^").filter(Boolean);
-  } else if (type === "single" || type === "canal") {
-    var u = decodeURIComponent(value);
-    if (u) embedUrls = [u];
+  var url = decodeURIComponent(type);
+  if (!url || url.indexOf("http") !== 0) {
+    throw kino.error("not_found", "URL de stream inválida");
   }
 
-  if (!embedUrls.length) {
-    throw kino.error("not_found", "No hay streams para este evento");
-  }
-
-  if (typeof kino.browser === "undefined" || typeof kino.browser.capture !== "function") {
-    throw kino.error("unavailable", "Este plugin necesita Kino 0.9.50 o más reciente");
-  }
-
-  // Probar cada link uno por uno
-  // Los primeros usan MID_MS para no gastar todo el tiempo en uno solo
-  // El último usa MAX_MS para darle la mejor oportunidad
-  var lastError = null;
-  var total = Math.min(embedUrls.length, 5); // máximo 5 links (el tiempo total de resolve es 75s)
-
-  for (var i = 0; i < total; i++) {
-    var embedUrl = embedUrls[i];
-    if (!embedUrl || embedUrl.indexOf("http") !== 0) continue;
-
-    var isLast = (i === total - 1);
-    var timeout = isLast ? MAX_MS : MID_MS;
-
-    try {
-      kino.log("Link " + (i + 1) + "/" + total + " (" + timeout + "ms):", embedUrl);
-
-      var page = await kino.browser.capture(embedUrl, {
-        timeoutMs: timeout,
-        headers: { "Referer": "https://daddylive.mov/" },
-      });
-
-      if (!page.media || !page.media.length) {
-        kino.log("Sin media en link", i + 1);
-        continue;
-      }
-
-      var main = page.media[0];
-      var alts = [];
-
-      // Otras calidades de esta página
-      for (var j = 1; j < Math.min(page.media.length, 4); j++) {
-        alts.push({
-          url: page.media[j].url,
-          headers: page.media[j].headers,
-        });
-      }
-
-      // Links restantes como lazy copies
-      for (var k = i + 1; k < Math.min(embedUrls.length, 8); k++) {
-        alts.push({
-          label: "Link " + (k + 1),
-          ref: "live|" + parts[1] + "|single|" + encodeURIComponent(embedUrls[k]),
-        });
-      }
-
-      kino.log("OK en link", i + 1);
-      return {
-        url: main.url,
-        headers: main.headers,
-        mime: "application/vnd.apple.mpegurl",
-        label: "Link " + (i + 1),
-        alternatives: alts.slice(0, 8),
-      };
-
-    } catch (e) {
-      kino.log("Link", i + 1, "falló:", e.code || e.message);
-      lastError = e;
-      if (e.code === "busy") {
-        throw kino.error("unavailable", "Otro stream está cargando, espera un momento e intenta de nuevo");
-      }
-      if (e.code === "browser_unavailable") {
-        throw kino.error("unavailable", "Este dispositivo no soporta el reproductor oculto");
-      }
-      // timeout o blocked: pasar al siguiente link
-      continue;
-    }
-  }
-
-  // Todos fallaron
-  if (lastError && lastError.kinoCode) throw lastError;
-  throw kino.error("unavailable", "Ningún link respondió. El evento puede haber terminado");
-      }
-                               
+  return {
+    url: url,
+    mime: "application/vnd.apple.mpegurl",
+  };
+}
+  

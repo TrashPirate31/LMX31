@@ -1,5 +1,5 @@
 /// <reference path="./sdk/kino.d.ts" />
-// LigaMX31 v1.5.0
+// LigaMX31 v1.6.0
 // Schedule: webws.365scores.com (Liga MX, competition 141)
 // Streams: canales.m3u del repo (m3u8 directos, sin browser)
 // Mapeo: canal por equipo local según derechos Apertura 2026
@@ -8,7 +8,7 @@ const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31
 const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/LMX31/refs/heads/main/canales.m3u";
 const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
-const M3U_KEY = "ligamx-canales-v105";
+const M3U_KEY = "ligamx-canales-v106";
 const M3U_TTL = 2 * 60 * 60 * 1000; // 2 horas
 
 // ── Mapeo equipo local → canales en orden de prioridad ──────────────────────
@@ -57,15 +57,7 @@ function getChannelsForTeam(teamName) {
   return TEAM_CHANNELS[key] || DEFAULT_CHANNELS;
 }
 
-function isLigaMXTeam(teamName) {
-  if (!teamName) return false;
-  var key = teamName.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9 ]/g, "").trim();
-  return !!TEAM_CHANNELS[key];
-}
-
-// ── Utilidades de Fecha y Hora Robustas ──────────────────────────────────────
+// ── Utilidades de Fecha y Hora ────────────────────────────────────────────────
 
 function parseTime(startTime) {
   if (!startTime) return 0;
@@ -105,16 +97,6 @@ function toMXTime(startTime) {
   var ampm = h >= 12 ? "pm" : "am";
   h = h % 12 || 12;
   return h + ":" + (m < 10 ? "0" : "") + m + " " + ampm + " MX";
-}
-
-function isToday(startTime) {
-  var ms = parseTime(startTime);
-  if (!ms) return false;
-  var gameDate = new Date(ms - 6 * 60 * 60 * 1000);
-  var now = new Date(Date.now() - 6 * 60 * 60 * 1000);
-  return gameDate.getUTCFullYear() === now.getUTCFullYear() &&
-         gameDate.getUTCMonth() === now.getUTCMonth() &&
-         gameDate.getUTCDate() === now.getUTCDate();
 }
 
 // ── Parsear M3U ───────────────────────────────────────────────────────────────
@@ -223,10 +205,8 @@ export async function liveChannels({ categoryId, cursor }) {
     var away = g.awayCompetitor && g.awayCompetitor.name;
     if (!home || !away) continue;
 
-    if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
-    if (!isToday(g.startTime)) continue;
-
-    var statusNum = g.statusGroup; // 3 = finalizado
+    // Como la API ya es exclusiva de Liga MX (competition 141), solo filtramos partidos finalizados (statusGroup === 3)
+    var statusNum = g.statusGroup;
     if (statusNum === 3) continue;
 
     var isLive = (statusNum === 2);
@@ -282,8 +262,8 @@ export async function liveChannels({ categoryId, cursor }) {
     var msg = categoryId === "en-vivo"
       ? "No hay partidos de Liga MX en vivo ahora"
       : categoryId === "proximos"
-      ? "No hay próximos partidos programados hoy"
-      : "No hay partidos de Liga MX hoy";
+      ? "No hay próximos partidos programados"
+      : "No hay partidos de Liga MX disponibles";
     return {
       items: [{
         id: "sin-partidos-" + categoryId,
@@ -315,8 +295,6 @@ export async function search(query) {
     var away = g.awayCompetitor && g.awayCompetitor.name;
     if (!home || !away) continue;
 
-    if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
-    if (!isToday(g.startTime)) continue;
     if (g.statusGroup === 3) continue;
 
     var title = home + " vs " + away;
@@ -373,5 +351,5 @@ export async function resolve(ref) {
     url: url,
     mime: "application/vnd.apple.mpegurl",
   };
-      }
-                                                           
+    }
+        

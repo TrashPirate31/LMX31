@@ -1,24 +1,12 @@
-# TPSports31 plugin for Kino
+# LMX31 plugin for Kino
 
-A plugin for the Kino video app that brings the live events and TV channels of
-[streamed.pk](https://streamed.pk) into Kino's search, Home and player. It is the reference example
+A plugin for the Kino video app that brings the live matches from Mexican football league into Kino's search, Home and player. It is the reference example
 for plugin authors: one manifest, one JavaScript file, no build step.
 
 ## What it does
 
-Get the streams from 'streamed.pk' and add them to Kino, allowing you to enjoy live sporting events
+Get the streams from a IPTV list, and get the schedule from free pages and add them to Kino, allowing you to enjoy live sporting events
 
-## Your own addresses (Configurar)
-
-Under Ajustes > Plugins > TPSports31 > Configurar the person can add up to thirty streamed.pk
-addresses with the "Agregar" button (a dialog with Dirección and an optional Categoría); each one is then listed as a text line with an "Editar" button:
-
-## Install it in Kino
-
-In Kino open Ajustes > Plugins and type the address of this repository:
-
-```
-kinotvapp/kino-plugin-archive
 ```
 
 Kino reads `kino-plugin.json` and `plugin.js` from the repository root, shows the hosts the plugin

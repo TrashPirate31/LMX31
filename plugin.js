@@ -5,7 +5,7 @@
 // Mapeo: canal por equipo local según derechos Apertura 2026
 
 const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31&sports=1&competitions=141";
-const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/TPSports31/refs/heads/main/canales.m3u";
+const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/LMX31/refs/heads/main/canales.m3u";
 const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
 const M3U_KEY = "ligamx-canales-v100";

@@ -11,12 +11,8 @@
     "webws.365scores.com",
     "raw.githubusercontent.com",
     "planettvweb.com",
-    "23.237.104.106",
-    "187.245.231.226",
-    "168.228.44.241",
     "estrellatv-oando.amagi.tv",
-    "angelexspectrus.neospaxy.top",
-    "45.5.118.152"
+    "angelexspectrus.neospaxy.top"
   ],
   "capabilities": ["search", "resolve", "channels"],
   "liveStreamHosts": "any",

@@ -1,5 +1,5 @@
 /// <reference path="./sdk/kino.d.ts" />
-// LigaMX31 v1.2.0
+// LigaMX31 v1.3.0
 // Schedule: webws.365scores.com (Liga MX, competition 141)
 // Streams: canales.m3u del repo (m3u8 directos, sin browser)
 // Mapeo: canal por equipo local según derechos Apertura 2026
@@ -8,7 +8,7 @@ const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31
 const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/LMX31/refs/heads/main/canales.m3u";
 const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
-const M3U_KEY = "ligamx-canales-v102";
+const M3U_KEY = "ligamx-canales-v103";
 const M3U_TTL = 2 * 60 * 60 * 1000; // 2 horas
 
 // ── Mapeo equipo local → canales en orden de prioridad ──────────────────────
@@ -65,7 +65,16 @@ function isLigaMXTeam(teamName) {
   return !!TEAM_CHANNELS[key];
 }
 
-// ── Utilidades ───────────────────────────────────────────────────────────────
+// ── Utilidades de Fecha y Hora Robustas ──────────────────────────────────────
+
+function parseTime(startTime) {
+  if (!startTime) return 0;
+  if (typeof startTime === "number") {
+    return startTime > 9999999999 ? startTime : startTime * 1000;
+  }
+  var t = Date.parse(startTime);
+  return isNaN(t) ? 0 : t;
+}
 
 function slugify(s) {
   return String(s || "")
@@ -77,8 +86,9 @@ function slugify(s) {
     .slice(0, 100) || "item";
 }
 
-function toMXTime(timestamp) {
-  var ms = timestamp > 9999999999 ? timestamp : timestamp * 1000;
+function toMXTime(startTime) {
+  var ms = parseTime(startTime);
+  if (!ms) return "";
   var d = new Date(ms - 6 * 60 * 60 * 1000); // UTC-6 México Central
   var h = d.getUTCHours();
   var m = d.getUTCMinutes();
@@ -87,10 +97,9 @@ function toMXTime(timestamp) {
   return h + ":" + (m < 10 ? "0" : "") + m + " " + ampm + " MX";
 }
 
-// Validar estrictamente si el partido corresponde al día de hoy (Hora México UTC-6)
-function isToday(timestamp) {
-  if (!timestamp) return false;
-  var ms = timestamp > 9999999999 ? timestamp : timestamp * 1000;
+function isToday(startTime) {
+  var ms = parseTime(startTime);
+  if (!ms) return false;
   var gameDate = new Date(ms - 6 * 60 * 60 * 1000);
   var now = new Date(Date.now() - 6 * 60 * 60 * 1000);
   return gameDate.getUTCFullYear() === now.getUTCFullYear() &&
@@ -204,24 +213,18 @@ export async function liveChannels({ categoryId, cursor }) {
     var away = g.awayCompetitor && g.awayCompetitor.name;
     if (!home || !away) continue;
 
-    // FILTRO ESTRICTO: Al menos uno de los dos equipos debe pertenecer a la Liga MX
     if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
-
-    // FILTRO DE FECHA: El partido debe ser estrictamente HOY
     if (!isToday(g.startTime)) continue;
 
     var statusNum = g.statusGroup; // 1=upcoming, 2=live, 3=finished
     if (categoryId === "en-vivo"  && statusNum !== 2) continue;
     if (categoryId === "proximos" && statusNum !== 1) continue;
-    if (statusNum === 3) continue; // nunca mostrar terminados
+    if (statusNum === 3) continue;
 
     var matchTitle = home + " vs " + away;
     var baseId = "lmx-" + slugify(home + "-" + away + "-" + (g.id || i));
 
-    var timeStr = "";
-    if (g.startTime) {
-      timeStr = toMXTime(g.startTime);
-    }
+    var timeStr = toMXTime(g.startTime);
 
     var scoreBadge = "";
     if (statusNum === 2 && g.homeCompetitor && g.awayCompetitor) {
@@ -355,5 +358,5 @@ export async function resolve(ref) {
     url: url,
     mime: "application/vnd.apple.mpegurl",
   };
-      }
-                                                           
+}
+  

@@ -1,5 +1,5 @@
 /// <reference path="./sdk/kino.d.ts" />
-// LigaMX31 v1.4.0
+// LigaMX31 v1.5.0
 // Schedule: webws.365scores.com (Liga MX, competition 141)
 // Streams: canales.m3u del repo (m3u8 directos, sin browser)
 // Mapeo: canal por equipo local según derechos Apertura 2026
@@ -8,7 +8,7 @@ const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31
 const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/LMX31/refs/heads/main/canales.m3u";
 const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
-const M3U_KEY = "ligamx-canales-v104";
+const M3U_KEY = "ligamx-canales-v105";
 const M3U_TTL = 2 * 60 * 60 * 1000; // 2 horas
 
 // ── Mapeo equipo local → canales en orden de prioridad ──────────────────────
@@ -72,7 +72,17 @@ function parseTime(startTime) {
   if (typeof startTime === "number") {
     return startTime > 9999999999 ? startTime : startTime * 1000;
   }
-  var t = Date.parse(startTime);
+  var s = String(startTime).trim();
+  if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(s)) {
+    s = s.replace(" ", "T");
+    if (s.indexOf("Z") < 0 && s.indexOf("+") < 0 && s.lastIndexOf("-") <= 10) {
+      s += "Z";
+    }
+  }
+  var t = Date.parse(s);
+  if (isNaN(t)) {
+    t = Date.parse(startTime);
+  }
   return isNaN(t) ? 0 : t;
 }
 
@@ -217,10 +227,10 @@ export async function liveChannels({ categoryId, cursor }) {
     if (!isToday(g.startTime)) continue;
 
     var statusNum = g.statusGroup; // 3 = finalizado
-    if (statusNum === 3) continue; // Descartar únicamente los finalizados
+    if (statusNum === 3) continue;
 
     var isLive = (statusNum === 2);
-    var isUpcoming = !isLive; // Todo lo que no esté en vivo hoy se cataloga como próximo
+    var isUpcoming = !isLive;
 
     if (categoryId === "en-vivo" && !isLive) continue;
     if (categoryId === "proximos" && !isUpcoming) continue;
@@ -363,5 +373,5 @@ export async function resolve(ref) {
     url: url,
     mime: "application/vnd.apple.mpegurl",
   };
-        }
-      
+      }
+                                                           

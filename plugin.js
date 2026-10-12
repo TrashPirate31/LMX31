@@ -1,5 +1,5 @@
 /// <reference path="./sdk/kino.d.ts" />
-// LigaMX31 v1.7.0
+// LigaMX31 v1.8.0
 // Schedule: webws.365scores.com (Liga MX, competition 141)
 // Streams: canales.m3u del repo (m3u8 directos, sin browser)
 // Mapeo: canal por equipo local según derechos Apertura 2026
@@ -8,7 +8,7 @@ const SCORES_API = "https://webws.365scores.com/web/games/?appTypeId=5&langId=31
 const MY_M3U     = "https://raw.githubusercontent.com/TrashPirate31/LMX31/refs/heads/main/canales.m3u";
 const UA         = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36";
 
-const M3U_KEY = "ligamx-canales-v107";
+const M3U_KEY = "ligamx-canales-v108";
 const M3U_TTL = 2 * 60 * 60 * 1000; // 2 horas
 
 // ── Mapeo equipo local → canales en orden de prioridad ──────────────────────
@@ -65,7 +65,7 @@ function isLigaMXTeam(teamName) {
   return !!TEAM_CHANNELS[key];
 }
 
-// ── Utilidades de Fecha y Hora Blindadas ─────────────────────────────────────
+// ── Utilidades de Fecha y Hora ────────────────────────────────────────────────
 
 function parseTime(startTime) {
   if (!startTime) return 0;
@@ -105,21 +105,6 @@ function toMXTime(startTime) {
   var ampm = h >= 12 ? "pm" : "am";
   h = h % 12 || 12;
   return h + ":" + (m < 10 ? "0" : "") + m + " " + ampm + " MX";
-}
-
-function isToday(startTime) {
-  var ms = parseTime(startTime);
-  if (!ms) {
-    // Fallback por texto si la fecha viene en formato crudo
-    var str = String(startTime || "");
-    var nowStr = new Date().toISOString().slice(0, 10);
-    return str.indexOf(nowStr) >= 0;
-  }
-  var gameDate = new Date(ms - 6 * 60 * 60 * 1000);
-  var now = new Date(Date.now() - 6 * 60 * 60 * 1000);
-  return gameDate.getUTCFullYear() === now.getUTCFullYear() &&
-         gameDate.getUTCMonth() === now.getUTCMonth() &&
-         gameDate.getUTCDate() === now.getUTCDate();
 }
 
 // ── Parsear M3U ───────────────────────────────────────────────────────────────
@@ -220,6 +205,7 @@ export async function liveChannels({ categoryId, cursor }) {
 
   var items = [];
   var seenIds = new Set();
+  var nowMs = Date.now();
 
   for (var i = 0; i < games.length; i++) {
     var g = games[i];
@@ -231,13 +217,16 @@ export async function liveChannels({ categoryId, cursor }) {
     // FILTRO ESTRICTO: Solo equipos de la Liga MX
     if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
 
-    // FILTRO DE FECHA: Estrictamente partidos de hoy
-    if (!isToday(g.startTime)) continue;
+    var statusNum = g.statusGroup;
+    var startTimeMs = parseTime(g.startTime);
+    
+    // FILTRO INTELIGENTE: Si ya pasaron más de 125 minutos desde que inició, se considera terminado
+    var elapsedMinutes = startTimeMs > 0 ? (nowMs - startTimeMs) / (1000 * 60) : 0;
+    var isFinishedByTime = (startTimeMs > 0 && elapsedMinutes > 125);
+    if (statusNum === 3 || isFinishedByTime) continue;
 
-    var statusNum = g.statusGroup; // 3 = finalizado
-    if (statusNum === 3) continue;
-
-    var isLive = (statusNum === 2);
+    // Determinar si está en vivo o próximo
+    var isLive = (statusNum === 2) || (startTimeMs > 0 && elapsedMinutes >= 0 && elapsedMinutes <= 115 && statusNum !== 1);
     var isUpcoming = !isLive;
 
     if (categoryId === "en-vivo" && !isLive) continue;
@@ -316,6 +305,7 @@ export async function search(query) {
   var [index, games] = await Promise.all([getIndex(), fetchMatches()]);
   var items = [];
   var seenIds = new Set();
+  var nowMs = Date.now();
 
   for (var i = 0; i < games.length; i++) {
     var g = games[i];
@@ -324,8 +314,11 @@ export async function search(query) {
     if (!home || !away) continue;
 
     if (!isLigaMXTeam(home) && !isLigaMXTeam(away)) continue;
-    if (!isToday(g.startTime)) continue;
-    if (g.statusGroup === 3) continue;
+
+    var statusNum = g.statusGroup;
+    var startTimeMs = parseTime(g.startTime);
+    var elapsedMinutes = startTimeMs > 0 ? (nowMs - startTimeMs) / (1000 * 60) : 0;
+    if (statusNum === 3 || (startTimeMs > 0 && elapsedMinutes > 125)) continue;
 
     var title = home + " vs " + away;
     var normTitle = title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -342,7 +335,7 @@ export async function search(query) {
       if (seenIds.has(id)) continue;
       seenIds.add(id);
 
-      var isLive = (g.statusGroup === 2);
+      var isLive = (statusNum === 2) || (startTimeMs > 0 && elapsedMinutes >= 0 && elapsedMinutes <= 115 && statusNum !== 1);
       var prefix = isLive ? "🔴 " : "⏳ ";
       items.push({
         id: id,
@@ -382,4 +375,4 @@ export async function resolve(ref) {
     mime: "application/vnd.apple.mpegurl",
   };
         }
-    
+        
